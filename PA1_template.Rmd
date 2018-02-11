@@ -1,25 +1,199 @@
----
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+----
+title: 'Reproducible Research: Peer Assessment 1'
+author: "Catherine Pfeifer"
+date: "Febuary 2018"
+output:
+  html_document: default
+  'html_document: keep_md: true': default
+
 ---
 
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = FALSE)
+```
+
+# Reproducible Research: Peer Assessment 1
+## objective of the assignement 
+
+This is the first assignment for the **Reproducible Research** course in Coursera's Data Science specialization. The purpose of the project was to answer a series of questions using data collected from a [FitBit](http://en.wikipedia.org/wiki/Fitbit).
+
+
+## Overview of the steps 
+
+* loading and preprocessing data
+* imputing missing values
+* interpreting data to answer research questions
+
+The objective of this output is to document the process that has led the results 
+
+## Data
+The data for this assignment was downloaded from the web:
+
+* Dataset: [Activity monitoring data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip) [52K]
+
+The variables included in this dataset are:
+
+* **steps**: Number of steps taking in a 5-minute interval (missing
+    values are coded as `NA`)
+
+* **date**: The date on which the measurement was taken in YYYY-MM-DD
+    format
+
+* **interval**: Identifier for the 5-minute interval in which
+    measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+
+
+# Results
 ## Loading and preprocessing the data
 
+load all necessary libraries 
+```{r, prep}
+library(dplyr)
+library(ggplot2)
+```
+Download, unzip and load data into data frame data.
+
+```{r loadata, echo=T}
+if(!file.exists("getdata-projectfiles-UCI HAR Dataset.zip")) {
+        temp <- tempfile()
+        download.file("http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip",temp)
+        unzip(temp)
+        unlink(temp)
+}
+
+data <- read.csv("activity.csv")
+summary(data)
+```
+
+We have 3 variables of which date is a factor, so we first need to transform it into a date format and get the names of the day
+
+```{r dataTrans}
+data$day <- weekdays(as.Date(data$date))
+data$date<- as.POSIXct(data$date, format="%Y-%m-%d")
+data$day<-weekdays(data$date)
+
+```
 
 
 ## What is mean total number of steps taken per day?
+So we need to aggregate ber date, we use dplyr package
+```{r  stepPD}
+steps <- data %>%filter(!is.na(steps)) %>%  group_by(date) %>%  summarize(steps = sum(steps)) 
+  head (steps)
+
+```
+
+Here is the histogram of the sum of the step per day : 
+```{r graphStep}
+ggplot(steps, aes(x = steps)) +
+  geom_histogram(fill = "blue", binwidth = 1000) +
+  labs(title = "Histogram of the sum of steps per day", x = "Steps per day", y = "Frequency")
 
 
+```
+
+Here are the mean and median of the sum of step by day
+```{r mean}
+summary(steps$steps)
+```
 
 ## What is the average daily activity pattern?
 
+To answer this question we first we need to make a time series with the interval
+```{r, interval}
+interval <- data %>%  filter(!is.na(steps)) %>%  group_by(interval) %>%  summarize(steps = mean(steps))
+
+```
+This results in an average setp per interval 
+
+```{r, plotINT} 
+ggplot(interval, aes(x=interval, y=steps)) +
+  geom_line(color = "blue")
+```
 
 
+To get the maximum steps, on average, across all the days, we can use the **which.max()** function 
+
+```{r max }
+
+interval[which.max(interval$steps),]
+
+```
 ## Imputing missing values
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
 
+### Calculate and report the total number of missing values in the dataset
+
+```{r  missing1}
+summary(is.na(data$steps))
+
+```
+So we have 2304 missing values 
+
+### Devise a strategy for filling in all of the missing values in the dataset. 
+
+Let's aim at replacing with the average number of steps in the same 5-min interval in a given day.
+
+Create the average table with an identifier that identifies the interval and the day of the week
+```{r AVGTABLE}
+avgTable <- data %>%filter(!is.na(steps)) %>% group_by(interval, day) %>% summarize( Avg = mean(steps))%>%mutate(iid=paste0(interval,day))
+head(avgTable)
+```
+
+
+
+### replace the NA based on the iid (interval day identifier)
+```{r match}
+
+data$iid<-paste0(data$interval,data$day)
+data$steps[is.na(data$steps)]<-avgTable$Avg[match(data$iid[is.na(data$steps)],avgTable$iid)]
+summary(data$steps)
+```
+We see now there are no NA is steps anymore. 
+
+### reproduce graph and statistics with the new data that has no NAs
+```{r graphStep2}
+steps <- data  %>%  group_by(date) %>%  summarize(steps = sum(steps)) 
+ggplot(steps, aes(x = steps)) +
+  geom_histogram(fill = "green", binwidth = 1000) +
+  labs(title = "Histogram of the sum of steps per day", x = "Steps per day", y = "Frequency")
+
+
+```
+
+We can also get the new median and mean
+```{r mean2}
+summary(steps$steps)
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+### create a variable that identifies weekends
+```{r weekend}
+
+data <- mutate(data, weektype = ifelse(day == "Saturday" | day == "Sunday", "weekend", "weekday"))
+head(data)
+```
+
+
+### create table that summarize the average steps per interval split by weektypoe
+
+```{r interval2}
+interval <- data %>%  group_by(interval, weektype) %>%  summarise(steps = mean(steps))
+head(interval)
+```
+
+### make a graph that allows to assess the differences between the weekday and weekend 
+```{r graph2}
+g <- ggplot(interval, aes(x=interval, y=steps, color = weektype)) +
+  geom_line() +
+     facet_wrap(~weektype, ncol = 1, nrow=2)
+ 
+print(g)
+```
+From the two plots it seems that the test object is more active earlier in the day during weekdays compared to weekends, but more active throughout the weekends compared with weekdays.
